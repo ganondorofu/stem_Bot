@@ -2,7 +2,7 @@
 
 Discord サーバーでユーザーのニックネームを自動設定するボットです。ユーザーのロール（現役部員 or OB）に基づいて適切なフォーマットでニックネームを設定します。
 
-TypeScript で開発されており、Discord.js v14 を使用しています。
+TypeScript で開発されており、Discord.js v14 を使用しています。Koyeb での本番デプロイにも対応しています。
 
 ## 機能
 
@@ -11,6 +11,7 @@ TypeScript で開発されており、Discord.js v14 を使用しています。
 - ユーザーロールの自動判定（現役部員 vs OB）
 - 入力値の検証（学籍番号・期生）
 - 適切なフォーマットでのニックネーム変更
+- **Koyeb対応**: ヘルスチェックサーバー内蔵、定期的なセルフpingでスリープ防止
 
 ## セットアップ
 
@@ -30,6 +31,10 @@ CLIENT_ID=アプリケーションID
 GUILD_ID=サーバーID
 CURRENT_MEMBER_ROLE_ID=現役部員ロールID
 OB_ROLE_ID=OBロールID
+
+# Koyeb設定（本番環境のみ）
+PORT=8000
+HEALTH_CHECK_URL=https://your-app-name.koyeb.app
 ```
 
 ### 3. Discord Bot の設定
@@ -78,7 +83,7 @@ npm run deploy
 # TypeScriptをコンパイル
 npm run build
 
-# 本番環境で実行
+# 本番環境で実行（Koyeb用）
 npm start
 
 # 開発環境で実行（TypeScript直接実行）
@@ -88,13 +93,36 @@ npm run dev
 npm run deploy
 ```
 
+## Koyebデプロイ
+
+### ヘルスチェック機能
+- **ヘルスチェックエンドポイント**: `http://localhost:8000/`
+- **自動スリープ防止**: 10分間隔で自己pingを実行
+- **稼働状況監視**: JSON形式でステータス情報を返却
+
+### 環境変数設定（Koyeb）
+Koyebのダッシュボードで以下の環境変数を設定してください：
+
+```
+DISCORD_TOKEN=your_bot_token
+CLIENT_ID=your_client_id
+GUILD_ID=your_guild_id
+CURRENT_MEMBER_ROLE_ID=your_current_member_role_id
+OB_ROLE_ID=your_ob_role_id
+PORT=8000
+HEALTH_CHECK_URL=https://your-app-name.koyeb.app
+```
+
 ## プロジェクト構造
 
 ```
 stem_Bot/
 ├── src/
 │   ├── index.ts                # メインボットファイル
-│   └── deploy-commands.ts      # スラッシュコマンド登録スクリプト
+│   ├── deploy-commands.ts      # スラッシュコマンド登録スクリプト
+│   ├── server.ts              # Koyeb用ヘルスチェックサーバー
+│   ├── cron.ts                # 定期ヘルスチェック機能
+│   └── config.ts              # 設定ファイル
 ├── dist/                       # コンパイル後のJavaScriptファイル
 ├── package.json               # npm 設定
 ├── tsconfig.json              # TypeScript設定

@@ -12,6 +12,10 @@ import {
     Interaction
 } from 'discord.js';
 import dotenv from 'dotenv';
+import { serve } from "@hono/node-server";
+import healthCheckServer from "./server";
+import { startHealthCheckCron } from "./cron";
+import { PORT } from "./config";
 
 dotenv.config();
 
@@ -257,3 +261,14 @@ process.on('uncaughtException', (error) => {
 
 // ボットの起動
 client.login(config.token);
+
+// Koyeb用のヘルスチェックサーバーを起動
+serve({
+  fetch: healthCheckServer.fetch,
+  port: Number(PORT),
+});
+
+// ヘルスチェックcronを開始
+startHealthCheckCron();
+
+console.log(`🚀 Discord Bot started with health check server on port ${PORT}`);
