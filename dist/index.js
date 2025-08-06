@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -6,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const discord_js_1 = require("discord.js");
 const dotenv_1 = __importDefault(require("dotenv"));
 const node_server_1 = require("@hono/node-server");
-const server_1 = __importDefault(require("./server"));
+const server_1 = __importStar(require("./server"));
 const cron_1 = require("./cron");
 const config_1 = require("./config");
 dotenv_1.default.config();
@@ -28,9 +61,17 @@ const config = {
 client.once('ready', () => {
     console.log(`${client.user.tag} がログインしました！`);
     console.log('スラッシュコマンドを使用するには、先に deploy-commands.ts を実行してください。');
+    // ボット状態を更新
+    (0, server_1.updateBotStatus)({
+        isReady: true,
+        lastActivity: new Date(),
+        errorCount: 0
+    });
 });
 // インタラクションの処理
 client.on('interactionCreate', async (interaction) => {
+    // 活動時刻を更新
+    (0, server_1.updateBotStatus)({ lastActivity: new Date() });
     try {
         if (interaction.isChatInputCommand() && interaction.commandName === 'name') {
             await handleNameCommand(interaction);
@@ -41,6 +82,8 @@ client.on('interactionCreate', async (interaction) => {
     }
     catch (error) {
         console.error('インタラクション処理中にエラーが発生しました:', error);
+        // エラーカウントを増加
+        (0, server_1.updateBotStatus)({ errorCount: global.errorCount + 1 });
         const errorMessage = 'コマンド処理中にエラーが発生しました。しばらく時間をおいてから再度お試しください。';
         if (interaction.isRepliable()) {
             if (interaction.replied || interaction.deferred) {
@@ -294,11 +337,43 @@ function validateStudentId(input) {
 // エラーハンドリング
 process.on('unhandledRejection', (error) => {
     console.error('未処理のPromise拒否:', error);
+    (0, server_1.updateBotStatus)({ errorCount: global.errorCount + 1 });
 });
 process.on('uncaughtException', (error) => {
     console.error('未処理の例外:', error);
-    process.exit(1);
+    (0, server_1.updateBotStatus)({ errorCount: global.errorCount + 1 });
+    // 重大なエラーの場合は再起動を試みる
+    setTimeout(() => {
+        console.log('プロセスを再起動しています...');
+        process.exit(1);
+    }, 5000);
 });
+// SIGTERM/SIGINTハンドリング（Koyebでの停止処理）
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Gracefully shutting down...');
+    (0, server_1.updateBotStatus)({ isReady: false });
+    client.destroy();
+    process.exit(0);
+});
+process.on('SIGINT', () => {
+    console.log('SIGINT received. Gracefully shutting down...');
+    (0, server_1.updateBotStatus)({ isReady: false });
+    client.destroy();
+    process.exit(0);
+});
+// 定期的なメモリ使用量チェック
+setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    if (heapUsedMB > 400) { // 400MB超過時に警告
+        console.warn(`⚠️ メモリ使用量が高いです: ${heapUsedMB}MB`);
+    }
+    // ガベージコレクションを強制実行（メモリ不足対策）
+    if (global.gc && heapUsedMB > 300) {
+        global.gc();
+        console.log('🧹 ガベージコレクションを実行しました');
+    }
+}, 60000); // 1分間隔
 // ボットの起動
 client.login(config.token);
 // Koyeb用のヘルスチェックサーバーを起動

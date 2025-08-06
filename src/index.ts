@@ -13,7 +13,7 @@ import {
 } from 'discord.js';
 import dotenv from 'dotenv';
 import { serve } from "@hono/node-server";
-import healthCheckServer from "./server";
+import healthCheckServer, { updateBotStatus } from "./server";
 import { startHealthCheckCron } from "./cron";
 import { PORT } from "./config";
 
@@ -30,6 +30,31 @@ interface ValidationResult {
     isValid: boolean;
     error?: string;
 }
+
+// パフォーマンス監視
+let lastMemoryCleanup = Date.now();
+function checkMemoryUsage() {
+    const memoryUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memoryUsage.heapTotal / 1024 / 1024);
+    const usagePercent = (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100;
+
+    console.log(`メモリ使用量: ${heapUsedMB}MB / ${heapTotalMB}MB (${usagePercent.toFixed(1)}%)`);
+
+    // メモリ使用率が80%を超えた場合、ガベージコレクションを実行
+    if (usagePercent > 80 && Date.now() - lastMemoryCleanup > 60000) { // 1分間のクールダウン
+        console.log("メモリ使用率が高いため、ガベージコレクションを実行します");
+        if (global.gc) {
+            global.gc();
+            lastMemoryCleanup = Date.now();
+            const afterGC = process.memoryUsage();
+            console.log(`GC後のメモリ使用量: ${Math.round(afterGC.heapUsed / 1024 / 1024)}MB`);
+        }
+    }
+}
+
+// 定期的なメモリチェック（5分ごと）
+setInterval(checkMemoryUsage, 5 * 60 * 1000);
 
 // ボットクライアントの作成
 const client = new Client({
@@ -49,12 +74,32 @@ const config: Config = {
 
 // ボットの準備完了時の処理
 client.once('ready', () => {
-    console.log(`${client.user!.tag} がログインしました！`);
-    console.log('スラッシュコマンドを使用するには、先に deploy-commands.ts を実行してください。');
+    const startTime = new Date();
+    console.log(`🚀 ${client.user!.tag} がログインしました！`);
+    console.log(`📊 起動時刻: ${startTime.toLocaleString('ja-JP')}`);
+    console.log(`🏢 サーバー数: ${client.guilds.cache.size}`);
+    console.log(`👥 ユーザー数: ${client.users.cache.size}`);
+    console.log(`💾 Node.js バージョン: ${process.version}`);
+    console.log(`🔧 Discord.js バージョン: ${require('discord.js').version}`);
+    console.log('📋 スラッシュコマンドを使用するには、先に deploy-commands.ts を実行してください。');
+    
+    // 初回メモリチェック
+    checkMemoryUsage();
+    
+    // ボット状態を更新
+    updateBotStatus({ 
+        isReady: true, 
+        lastActivity: new Date(),
+        errorCount: 0,
+        startTime: startTime
+    });
 });
 
 // インタラクションの処理
 client.on('interactionCreate', async (interaction: Interaction) => {
+    // 活動時刻を更新
+    updateBotStatus({ lastActivity: new Date() });
+    
     try {
         if (interaction.isChatInputCommand() && interaction.commandName === 'name') {
             await handleNameCommand(interaction);
@@ -63,6 +108,9 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         }
     } catch (error) {
         console.error('インタラクション処理中にエラーが発生しました:', error);
+        
+        // エラーカウントを増加
+        updateBotStatus({ errorCount: (global as any).errorCount + 1 });
         
         const errorMessage = 'コマンド処理中にエラーが発生しました。しばらく時間をおいてから再度お試しください。';
         
@@ -332,23 +380,109 @@ function validateStudentId(input: string): ValidationResult {
 // エラーハンドリング
 process.on('unhandledRejection', (error) => {
     console.error('未処理のPromise拒否:', error);
+    updateBotStatus({ errorCount: (global as any).errorCount + 1 });
 });
 
 process.on('uncaughtException', (error) => {
     console.error('未処理の例外:', error);
-    process.exit(1);
+    updateBotStatus({ errorCount: (global as any).errorCount + 1 });
+    
+    // 重大なエラーの場合は再起動を試みる
+    setTimeout(() => {
+        console.log('プロセスを再起動しています...');
+        process.exit(1);
+    }, 5000);
 });
+
+// SIGTERM/SIGINTハンドリング（Koyebでの停止処理）
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Gracefully shutting down...');
+    updateBotStatus({ isReady: false });
+    client.destroy();
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received. Gracefully shutting down...');
+    updateBotStatus({ isReady: false });
+    client.destroy();
+    process.exit(0);
+});
+
+// 定期的なメモリ使用量チェック
+setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    
+    // より詳細なメモリログ
+    console.log(`📊 メモリ使用量: ${heapUsedMB}MB / ${heapTotalMB}MB (使用率: ${Math.round((heapUsedMB/heapTotalMB)*100)}%)`);
+    
+    if (heapUsedMB > 400) { // 400MB超過時に警告
+        console.warn(`⚠️ メモリ使用量が高いです: ${heapUsedMB}MB`);
+    }
+    
+    if (heapUsedMB > 450) { // 450MB超過時に緊急措置
+        console.error(`🚨 メモリ使用量が危険域です: ${heapUsedMB}MB - ガベージコレクションを強制実行`);
+        if (global.gc) {
+            global.gc();
+            console.log('🧹 緊急ガベージコレクションを実行しました');
+        }
+    }
+    
+    // ガベージコレクションを強制実行（メモリ不足対策）
+    if (global.gc && heapUsedMB > 300) {
+        global.gc();
+        const newMemUsage = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+        console.log(`🧹 ガベージコレクション実行: ${heapUsedMB}MB → ${newMemUsage}MB`);
+    }
+}, 60000); // 1分間隔
+
+// アップタイム監視
+setInterval(() => {
+    const uptimeHours = Math.floor(process.uptime() / 3600);
+    const uptimeMinutes = Math.floor((process.uptime() % 3600) / 60);
+    console.log(`⏰ 稼働時間: ${uptimeHours}時間${uptimeMinutes}分`);
+}, 3600000); // 1時間間隔でアップタイムログ
 
 // ボットの起動
 client.login(config.token);
 
-// Koyeb用のヘルスチェックサーバーを起動
-serve({
-  fetch: healthCheckServer.fetch,
-  port: Number(PORT),
+// 未処理の例外をキャッチ
+process.on('uncaughtException', (error) => {
+    console.error('💥 未処理の例外:', error);
+    updateBotStatus({ errorCount: (process as any).errorCount + 1 });
 });
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚫 未処理のPromise拒否:', reason);
+    updateBotStatus({ errorCount: (process as any).errorCount + 1 });
+});
+
+// グレースフルシャットダウン
+process.on('SIGINT', () => {
+    console.log('🛑 シャットダウンシグナルを受信しました...');
+    client.destroy();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('🛑 終了シグナルを受信しました...');
+    client.destroy();
+    process.exit(0);
+});
+
+// Koyeb用のヘルスチェックサーバーを起動
+try {
+    serve({
+        fetch: healthCheckServer.fetch,
+        port: Number(PORT),
+    });
+    console.log(`🚀 Discord Bot started with health check server on port ${PORT}`);
+} catch (error) {
+    console.error(`❌ ヘルスチェックサーバーの起動に失敗: ${error}`);
+    console.log(`🔄 ポート ${PORT} が使用中の可能性があります`);
+}
 
 // ヘルスチェックcronを開始
 startHealthCheckCron();
-
-console.log(`🚀 Discord Bot started with health check server on port ${PORT}`);

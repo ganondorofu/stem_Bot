@@ -4,10 +4,11 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
-    "deploy": "ts-node src/deploy-commands.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node --expose-gc --max-old-space-size=512 -r tsx/cjs src/index.ts",
+    "dev": "node --expose-gc --max-old-space-size=512 -r tsx/cjs --watch src/index.ts",
+    "deploy": "node --expose-gc -r tsx/cjs src/deploy-commands.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "health": "curl -s http://localhost:3000/health | jq ."
   },
   "keywords": [
     "discord",
