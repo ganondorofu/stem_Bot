@@ -5,6 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const discord_js_1 = require("discord.js");
 const dotenv_1 = __importDefault(require("dotenv"));
+const node_server_1 = require("@hono/node-server");
+const server_1 = __importDefault(require("./server"));
+const cron_1 = require("./cron");
+const config_1 = require("./config");
 dotenv_1.default.config();
 // ボットクライアントの作成
 const client = new discord_js_1.Client({
@@ -40,10 +44,28 @@ client.on('interactionCreate', async (interaction) => {
         const errorMessage = 'コマンド処理中にエラーが発生しました。しばらく時間をおいてから再度お試しください。';
         if (interaction.isRepliable()) {
             if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ content: errorMessage, ephemeral: true });
+                const followUp = await interaction.followUp({ content: errorMessage, ephemeral: true });
+                // 15秒後にフォローアップメッセージを削除
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    }
+                    catch (error) {
+                        // メッセージがすでに削除されている場合はエラーを無視
+                    }
+                }, 15000);
             }
             else {
-                await interaction.reply({ content: errorMessage, ephemeral: true });
+                const reply = await interaction.reply({ content: errorMessage, ephemeral: true });
+                // 15秒後にメッセージを削除
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    }
+                    catch (error) {
+                        // メッセージがすでに削除されている場合はエラーを無視
+                    }
+                }, 15000);
             }
         }
     }
@@ -83,27 +105,54 @@ async function handleModalSubmit(interaction) {
     const studentIdOrGeneration = interaction.fields.getTextInputValue('student_id_or_generation').trim();
     // 本名のスペースチェック
     if (realName.includes(' ') || realName.includes('　')) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: '本名はスペースなしで入力してください。',
             ephemeral: true
         });
+        // 10秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            }
+            catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 10000);
         return;
     }
     // 学籍番号/期生が数字のみかチェック
     if (!/^\d+$/.test(studentIdOrGeneration)) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: '学籍番号または期生は数字のみで入力してください。',
             ephemeral: true
         });
+        // 10秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            }
+            catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 10000);
         return;
     }
     // ユーザーのロールを取得
     const member = interaction.member;
     if (!member || !interaction.guild) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: 'メンバー情報を取得できませんでした。',
             ephemeral: true
         });
+        // 10秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            }
+            catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 10000);
         return;
     }
     // GuildMemberオブジェクトを取得
@@ -120,10 +169,19 @@ async function handleModalSubmit(interaction) {
     }
     // ロールチェック
     if (!isAlumni && !isCurrentMember) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: 'ニックネーム設定には、現役部員またはOBのロールが必要です。',
             ephemeral: true
         });
+        // 15秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            }
+            catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 15000);
         return;
     }
     let nickname;
@@ -132,10 +190,19 @@ async function handleModalSubmit(interaction) {
         // OBの場合：期生の検証
         validationResult = validateGeneration(studentIdOrGeneration);
         if (!validationResult.isValid) {
-            await interaction.reply({
+            const reply = await interaction.reply({
                 content: 'OBの方は期生を2以上の数字で入力してください。',
                 ephemeral: true
             });
+            // 10秒後にメッセージを削除
+            setTimeout(async () => {
+                try {
+                    await interaction.deleteReply();
+                }
+                catch (error) {
+                    // メッセージがすでに削除されている場合はエラーを無視
+                }
+            }, 10000);
             return;
         }
         nickname = `${realName}(第${studentIdOrGeneration}期卒業生)`;
@@ -144,10 +211,19 @@ async function handleModalSubmit(interaction) {
         // 現役部員の場合：学籍番号の検証
         validationResult = validateStudentId(studentIdOrGeneration);
         if (!validationResult.isValid) {
-            await interaction.reply({
+            const reply = await interaction.reply({
                 content: '現役部員の方は学籍番号を10101から30940の範囲で入力してください。',
                 ephemeral: true
             });
+            // 10秒後にメッセージを削除
+            setTimeout(async () => {
+                try {
+                    await interaction.deleteReply();
+                }
+                catch (error) {
+                    // メッセージがすでに削除されている場合はエラーを無視
+                }
+            }, 10000);
             return;
         }
         nickname = `${realName}(${studentIdOrGeneration})`;
@@ -155,10 +231,19 @@ async function handleModalSubmit(interaction) {
     // ニックネームの設定
     try {
         await guildMember.setNickname(nickname);
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: `ニックネームを**\`${nickname}\`**に変更しました。`,
             ephemeral: true
         });
+        // 30秒後にメッセージを削除（成功メッセージは少し長めに表示）
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            }
+            catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 30000);
     }
     catch (error) {
         console.error('ニックネーム設定エラー:', error);
@@ -169,10 +254,19 @@ async function handleModalSubmit(interaction) {
         else if (error.code === 50035) {
             errorMessage = 'ニックネームが長すぎます。より短い名前をお試しください。';
         }
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: errorMessage,
             ephemeral: true
         });
+        // 20秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            }
+            catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 20000);
     }
 }
 // 期生の検証
@@ -207,4 +301,12 @@ process.on('uncaughtException', (error) => {
 });
 // ボットの起動
 client.login(config.token);
+// Koyeb用のヘルスチェックサーバーを起動
+(0, node_server_1.serve)({
+    fetch: server_1.default.fetch,
+    port: Number(config_1.PORT),
+});
+// ヘルスチェックcronを開始
+(0, cron_1.startHealthCheckCron)();
+console.log(`🚀 Discord Bot started with health check server on port ${config_1.PORT}`);
 //# sourceMappingURL=index.js.map

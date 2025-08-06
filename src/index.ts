@@ -68,9 +68,25 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         
         if (interaction.isRepliable()) {
             if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ content: errorMessage, ephemeral: true });
+                const followUp = await interaction.followUp({ content: errorMessage, ephemeral: true });
+                // 15秒後にフォローアップメッセージを削除
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (error) {
+                        // メッセージがすでに削除されている場合はエラーを無視
+                    }
+                }, 15000);
             } else {
-                await interaction.reply({ content: errorMessage, ephemeral: true });
+                const reply = await interaction.reply({ content: errorMessage, ephemeral: true });
+                // 15秒後にメッセージを削除
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (error) {
+                        // メッセージがすでに削除されている場合はエラーを無視
+                    }
+                }, 15000);
             }
         }
     }
@@ -118,29 +134,53 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction) {
 
     // 本名のスペースチェック
     if (realName.includes(' ') || realName.includes('　')) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: '本名はスペースなしで入力してください。',
             ephemeral: true
         });
+        // 10秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            } catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 10000);
         return;
     }
 
     // 学籍番号/期生が数字のみかチェック
     if (!/^\d+$/.test(studentIdOrGeneration)) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: '学籍番号または期生は数字のみで入力してください。',
             ephemeral: true
         });
+        // 10秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            } catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 10000);
         return;
     }
 
     // ユーザーのロールを取得
     const member = interaction.member;
     if (!member || !interaction.guild) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: 'メンバー情報を取得できませんでした。',
             ephemeral: true
         });
+        // 10秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            } catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 10000);
         return;
     }
 
@@ -160,10 +200,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction) {
 
     // ロールチェック
     if (!isAlumni && !isCurrentMember) {
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: 'ニックネーム設定には、現役部員またはOBのロールが必要です。',
             ephemeral: true
         });
+        // 15秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            } catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 15000);
         return;
     }
 
@@ -174,10 +222,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction) {
         // OBの場合：期生の検証
         validationResult = validateGeneration(studentIdOrGeneration);
         if (!validationResult.isValid) {
-            await interaction.reply({
+            const reply = await interaction.reply({
                 content: 'OBの方は期生を2以上の数字で入力してください。',
                 ephemeral: true
             });
+            // 10秒後にメッセージを削除
+            setTimeout(async () => {
+                try {
+                    await interaction.deleteReply();
+                } catch (error) {
+                    // メッセージがすでに削除されている場合はエラーを無視
+                }
+            }, 10000);
             return;
         }
         nickname = `${realName}(第${studentIdOrGeneration}期卒業生)`;
@@ -185,10 +241,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction) {
         // 現役部員の場合：学籍番号の検証
         validationResult = validateStudentId(studentIdOrGeneration);
         if (!validationResult.isValid) {
-            await interaction.reply({
+            const reply = await interaction.reply({
                 content: '現役部員の方は学籍番号を10101から30940の範囲で入力してください。',
                 ephemeral: true
             });
+            // 10秒後にメッセージを削除
+            setTimeout(async () => {
+                try {
+                    await interaction.deleteReply();
+                } catch (error) {
+                    // メッセージがすでに削除されている場合はエラーを無視
+                }
+            }, 10000);
             return;
         }
         nickname = `${realName}(${studentIdOrGeneration})`;
@@ -197,10 +261,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction) {
     // ニックネームの設定
     try {
         await guildMember.setNickname(nickname);
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: `ニックネームを**\`${nickname}\`**に変更しました。`,
             ephemeral: true
         });
+        // 30秒後にメッセージを削除（成功メッセージは少し長めに表示）
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            } catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 30000);
     } catch (error: any) {
         console.error('ニックネーム設定エラー:', error);
         
@@ -212,10 +284,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction) {
             errorMessage = 'ニックネームが長すぎます。より短い名前をお試しください。';
         }
         
-        await interaction.reply({
+        const reply = await interaction.reply({
             content: errorMessage,
             ephemeral: true
         });
+        // 20秒後にメッセージを削除
+        setTimeout(async () => {
+            try {
+                await interaction.deleteReply();
+            } catch (error) {
+                // メッセージがすでに削除されている場合はエラーを無視
+            }
+        }, 20000);
     }
 }
 
